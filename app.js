@@ -1,61 +1,74 @@
 const http = require("http");
+const fs = require("fs");
+const path = require("path");
 
 const hostname = "0.0.0.0";
-const port = 3000;
+const port = Number(process.env.PORT) || 3000;
+
+const publicRoot = path.resolve(__dirname, "public");
+
+const mime = {
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".webp": "image/webp",
+};
+
+function resolvePublicPath(urlPath) {
+  let pathname = decodeURIComponent(urlPath.split("?")[0]);
+  if (pathname === "/") pathname = "/index.html";
+
+  const relative = pathname.replace(/^\/+/, "");
+  const fullPath = path.resolve(publicRoot, relative);
+
+  const relToPublic = path.relative(publicRoot, fullPath);
+  if (relToPublic.startsWith("..") || path.isAbsolute(relToPublic)) {
+    return null;
+  }
+
+  return fullPath;
+}
 
 const server = http.createServer((req, res) => {
-  res.statusCode = 200;
-  res.setHeader("Content-Type", "text/html");
+  const fullPath = resolvePublicPath(req.url);
 
-  res.end(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>DevOps Project</title>
-      <style>
-        body {
-          font-family: Arial;
-          margin: 0;
-        }
-        header {
-          background-color: #007BFF;
-          color: white;
-          padding: 15px;
-          text-align: center;
-        }
-        main {
-          padding: 20px;
-          text-align: center;
-        }
-        footer {
-          background-color: #333;
-          color: white;
-          padding: 10px;
-          text-align: center;
-          position: fixed;
-          bottom: 0;
-          width: 100%;
-        }
-      </style>
-    </head>
-    <body>
+  if (!fullPath) {
+    res.statusCode = 403;
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.end("Forbidden");
+    return;
+  }
 
-      <header>
-        <h1>My DevOps Project</h1>
-      </header>
+  fs.stat(fullPath, (err, st) => {
+    if (err || !st.isFile()) {
+      res.statusCode = 404;
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.end("Not found");
+      return;
+    }
 
-      <main>
-        <h2>Welcome!</h2>
-        <p>This web application is running inside a Docker container.</p>
-      </main>
+    const ext = path.extname(fullPath).toLowerCase();
+    const type = mime[ext] || "application/octet-stream";
 
-      <footer>
-        <p>© 2026 DevOps Project</p>
-      </footer>
-
-    </body>
-    </html>
-  `);
+    fs.readFile(fullPath, (readErr, data) => {
+      if (readErr) {
+        res.statusCode = 500;
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.end("Server error");
+        return;
+      }
+      res.statusCode = 200;
+      res.setHeader("Content-Type", type);
+      res.end(data);
+    });
+  });
 });
 
 server.listen(port, hostname, () => {
